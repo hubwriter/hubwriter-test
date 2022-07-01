@@ -1,3 +1,11 @@
+# Test color modes
+
+The background color should be `#ffffff` for light mode and `#0d1117` for dark mode.
+
+
+
+<hr>
+
 # Rough.js
 
 <b>Rough.js</b> is a small (<9kB gzipped) graphics library that lets you draw in a _sketchy_, _hand-drawn-like_, style.
