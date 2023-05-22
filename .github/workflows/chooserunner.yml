@@ -12,6 +12,6 @@ on:
 jobs:
 
   test:
-    runs-on: [self-hosted, ${{ github.event.inputs.chosen-os }}]
+    runs-on: [self-hosted, "${{ github.event.inputs.chosen-os }}"]
     steps:
     - run: echo Hello world!
