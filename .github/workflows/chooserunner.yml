@@ -1,0 +1,23 @@
+name: choose-os
+on:
+ workflow_dispatch:
+   inputs:
+     chosen-os:
+       required: true
+       type: choice
+       options:
+       - ubuntu-latest
+       - windows-latest
+       - macos-latest
+
+# env:
+#  label1: ${{ github.event.inputs.label1 }}
+#  label2: ${{ github.event.inputs.label2 }}
+#  label3: ${{ github.event.inputs.label3 }}
+ 
+jobs:
+
+  test:
+    runs-on: ${{ github.event.inputs.chosen-os }}
+    steps:
+    - run: echo Hello world!
