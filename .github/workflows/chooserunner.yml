@@ -6,13 +6,12 @@ on:
        required: true
        type: choice
        options:
-       - ubuntu-latest
-       - windows-latest
-       - macos-latest
+       - Ubuntu
+       - macOS
 
 jobs:
 
   test:
-    runs-on: ${{ github.event.inputs.chosen-os }}
+    runs-on: [self-hosted, ${{ github.event.inputs.chosen-os }}]
     steps:
     - run: echo Hello world!
