@@ -10,11 +10,6 @@ on:
        - windows-latest
        - macos-latest
 
-# env:
-#  label1: ${{ github.event.inputs.label1 }}
-#  label2: ${{ github.event.inputs.label2 }}
-#  label3: ${{ github.event.inputs.label3 }}
- 
 jobs:
 
   test:
