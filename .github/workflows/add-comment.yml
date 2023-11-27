@@ -15,6 +15,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NUMBER: ${{ github.event.issue.number }}
+          GH_REPO: ${{ github.repository }}
           BODY: >
             Nice work!
             
