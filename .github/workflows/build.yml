@@ -3,7 +3,7 @@ name: "build"
 on: [push]
 
 env:
-  NODE_VERSION: '16.x'                # set this to the node version to use
+  NODE_VERSION: '16'                # set this to the node version to use
 
 jobs:
   vercel: 
@@ -16,8 +16,7 @@ jobs:
       - name: use node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
-          registry-url: https://registry.npmjs.org/
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: install dependencies
         run: npm install
