@@ -2,6 +2,9 @@ name: "build"
 
 on: [push]
 
+env:
+  NODE_VERSION: '16.x'                # set this to the node version to use
+
 jobs:
   vercel: 
     runs-on: ubuntu-latest
