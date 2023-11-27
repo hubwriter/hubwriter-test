@@ -14,7 +14,6 @@ jobs:
         run: gh issue comment "$NUMBER" --body "$BODY"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.issue.number }}
           BODY: >
             Nice work!
