@@ -29,8 +29,12 @@ export function rotateLines(lines: Line[], center: Point, degrees: number): void
   rotatePoints(points, center, degrees);
 }
 
-export function lineLength(line: Line): number {
-  const p1 = line[0];
-  const p2 = line[1];
-  return Math.sqrt(Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2));
+export function distanceSq(a: Point, b: Point): number {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return dx * dx + dy * dy;
+}
+
+export function distance(a: Point, b: Point): number {
+  return Math.sqrt(distanceSq(a, b));
 }

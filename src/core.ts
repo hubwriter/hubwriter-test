@@ -1,5 +1,5 @@
 import { Point } from './geometry';
-import { Random } from './math';
+import { Random } from './random';
 
 export const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -13,7 +13,6 @@ export interface DrawingSurface {
 }
 
 export interface Options {
-  maxRandomnessOffset?: number;
   roughness?: number;
   bowing?: number;
   stroke?: string;
@@ -34,7 +33,6 @@ export interface Options {
 }
 
 export interface ResolvedOptions extends Options {
-  maxRandomnessOffset: number;
   roughness: number;
   bowing: number;
   stroke: string;
@@ -50,21 +48,20 @@ export interface ResolvedOptions extends Options {
   dashGap: number;
   zigzagOffset: number;
   seed: number;
-  roughnessGain: number;
   randomizer?: Random;
 }
 
-export declare type OpType = 'move' | 'bcurveTo' | 'lineTo' | 'qcurveTo';
-export declare type OpSetType = 'path' | 'fillPath' | 'fillSketch' | 'path2Dfill' | 'path2Dpattern';
+export declare type VectorType = 'curve' | 'line'; //'move' | 'bcurveTo' | 'lineTo' | 'qcurveTo';
+export declare type VectorOpType = 'path' | 'fillPath' | 'fillSketch' | 'path2Dfill' | 'path2Dpattern';
 
-export interface Op {
-  op: OpType;
+export interface Vector {
+  op: VectorType;
   data: number[];
 }
 
-export interface OpSet {
-  type: OpSetType;
-  ops: Op[];
+export interface VectorOp {
+  type: VectorOpType;
+  vectors: Vector[];
   size?: Point;
   path?: string;
 }
@@ -72,7 +69,7 @@ export interface OpSet {
 export interface Drawable {
   shape: string;
   options: ResolvedOptions;
-  sets: OpSet[];
+  op: VectorOp;
 }
 
 export interface PathInfo {

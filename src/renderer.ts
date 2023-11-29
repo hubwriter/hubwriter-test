@@ -1,9 +1,9 @@
-import { ResolvedOptions, Op, OpSet } from './core.js';
-import { Point } from './geometry.js';
+import { ResolvedOptions, Vector, VectorOp } from './core.js';
+import { Point, distanceSq } from './geometry.js';
 import { RoughPath, PathFitter, Segment, RoughArcConverter } from './path.js';
 import { getFiller } from './fillers/filler.js';
 import { RenderHelper } from './fillers/filler-interface.js';
-import { Random } from './math.js';
+import { Random } from './random.js';
 
 interface EllipseParams {
   rx: number;
@@ -12,58 +12,62 @@ interface EllipseParams {
 }
 
 const helper: RenderHelper = {
-  randOffset,
   randOffsetWithRange,
   ellipse,
   doubleLineOps
 };
 
-export function line(x1: number, y1: number, x2: number, y2: number, o: ResolvedOptions): OpSet {
-  return { type: 'path', ops: _doubleLine(x1, y1, x2, y2, o) };
+const MAX_RAND_OFFSET = 2;
+
+export function line(x1: number, y1: number, x2: number, y2: number, o: ResolvedOptions): VectorOp {
+  return { type: 'path', vectors: _doubleLine(x1, y1, x2, y2, o) };
 }
 
-export function linearPath(points: Point[], close: boolean, o: ResolvedOptions): OpSet {
+export function linearPath(points: Point[], close: boolean, o: ResolvedOptions): VectorOp {
   const len = (points || []).length;
+  const vectors: Vector[] = [];
   if (len > 2) {
-    let ops: Op[] = [];
     for (let i = 0; i < (len - 1); i++) {
-      ops = ops.concat(_doubleLine(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], o));
+      vectors.push(..._doubleLine(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], o));
     }
     if (close) {
-      ops = ops.concat(_doubleLine(points[len - 1][0], points[len - 1][1], points[0][0], points[0][1], o));
+      vectors.push(..._doubleLine(points[len - 1][0], points[len - 1][1], points[0][0], points[0][1], o));
     }
-    return { type: 'path', ops };
   } else if (len === 2) {
     return line(points[0][0], points[0][1], points[1][0], points[1][1], o);
   }
-  return { type: 'path', ops: [] };
+  return { type: 'path', vectors };
 }
 
-export function polygon(points: Point[], o: ResolvedOptions): OpSet {
+export function polygon(points: Point[], o: ResolvedOptions): VectorOp {
   return linearPath(points, true, o);
 }
 
-export function rectangle(x: number, y: number, width: number, height: number, o: ResolvedOptions): OpSet {
+export function rectangle(x: number, y: number, width: number, height: number, o: ResolvedOptions): VectorOp {
   const points: Point[] = [
     [x, y], [x + width, y], [x + width, y + height], [x, y + height]
   ];
   return polygon(points, o);
 }
 
-export function curve(points: Point[], o: ResolvedOptions): OpSet {
-  const o1 = _curveWithOffset(points, 1 * (1 + o.roughness * 0.2), o);
-  const o2 = _curveWithOffset(points, 1.5 * (1 + o.roughness * 0.22), o);
-  return { type: 'path', ops: o1.concat(o2) };
+export function curve(points: Point[], o: ResolvedOptions): VectorOp {
+  return {
+    type: 'path',
+    vectors: [
+      ..._curveWithOffset(points, 1 * (1 + o.roughness * 0.2), o),
+      ..._curveWithOffset(points, 1.5 * (1 + o.roughness * 0.22), o)
+    ]
+  };
 }
 
 export interface EllipseResult {
-  opset: OpSet;
+  op: VectorOp;
   estimatedPoints: Point[];
 }
 
-export function ellipse(x: number, y: number, width: number, height: number, o: ResolvedOptions): OpSet {
+export function ellipse(x: number, y: number, width: number, height: number, o: ResolvedOptions): VectorOp {
   const params = generateEllipseParams(width, height, o);
-  return ellipseWithParams(x, y, o, params).opset;
+  return ellipseWithParams(x, y, o, params).op;
 }
 
 export function generateEllipseParams(width: number, height: number, o: ResolvedOptions): EllipseParams {
@@ -81,15 +85,16 @@ export function generateEllipseParams(width: number, height: number, o: Resolved
 export function ellipseWithParams(x: number, y: number, o: ResolvedOptions, ellipseParams: EllipseParams): EllipseResult {
   const [ap1, cp1] = _computeEllipsePoints(ellipseParams.increment, x, y, ellipseParams.rx, ellipseParams.ry, 1, ellipseParams.increment * _offset(0.1, _offset(0.4, 1, o), o), o);
   const [ap2] = _computeEllipsePoints(ellipseParams.increment, x, y, ellipseParams.rx, ellipseParams.ry, 1.5, 0, o);
-  const o1 = _curve(ap1, null, o);
-  const o2 = _curve(ap2, null, o);
   return {
     estimatedPoints: cp1,
-    opset: { type: 'path', ops: o1.concat(o2) }
+    op: {
+      type: 'path',
+      vectors: [..._curve(ap1, null, o), ..._curve(ap2, null, o)]
+    }
   };
 }
 
-export function arc(x: number, y: number, width: number, height: number, start: number, stop: number, closed: boolean, roughClosure: boolean, o: ResolvedOptions): OpSet {
+export function arc(x: number, y: number, width: number, height: number, start: number, stop: number, closed: boolean, roughClosure: boolean, o: ResolvedOptions): VectorOp {
   const cx = x;
   const cy = y;
   let rx = Math.abs(width / 2);
@@ -108,9 +113,11 @@ export function arc(x: number, y: number, width: number, height: number, start: 
   }
   const ellipseInc = (Math.PI * 2) / o.curveStepCount;
   const arcInc = Math.min(ellipseInc / 2, (stp - strt) / 2);
-  const o1 = _arc(arcInc, cx, cy, rx, ry, strt, stp, 1, o);
-  const o2 = _arc(arcInc, cx, cy, rx, ry, strt, stp, 1.5, o);
-  let ops = o1.concat(o2);
+  const vectors = _arc(arcInc, cx, cy, rx, ry, strt, stp, 1, o);
+  // const vectors: Vector[] = [
+  //   ..._arc(arcInc, cx, cy, rx, ry, strt, stp, 1, o),
+  //   ..._arc(arcInc, cx, cy, rx, ry, strt, stp, 1.5, o)
+  // ];
   if (closed) {
     if (roughClosure) {
       ops = ops.concat(_doubleLine(cx, cy, cx + rx * Math.cos(strt), cy + ry * Math.sin(strt), o));
@@ -120,7 +127,7 @@ export function arc(x: number, y: number, width: number, height: number, start: 
       ops.push({ op: 'lineTo', data: [cx + rx * Math.cos(strt), cy + ry * Math.sin(strt)] });
     }
   }
-  return { type: 'path', ops };
+  return { type: 'path', vectors: ops };
 }
 
 export function svgPath(path: string, o: ResolvedOptions): OpSet {
@@ -192,10 +199,6 @@ export function patternFillArc(x: number, y: number, width: number, height: numb
   return patternFillPolygon(points, o);
 }
 
-export function randOffset(x: number, o: ResolvedOptions): number {
-  return _offsetOpt(x, o);
-}
-
 export function randOffsetWithRange(min: number, max: number, o: ResolvedOptions): number {
   return _offset(min, max, o);
 }
@@ -213,88 +216,76 @@ function random(ops: ResolvedOptions): number {
   return ops.randomizer.next();
 }
 
-function _offset(min: number, max: number, ops: ResolvedOptions): number {
-  return ops.roughness * ops.roughnessGain * ((random(ops) * (max - min)) + min);
+function _offset(min: number, max: number, ops: ResolvedOptions, roughnessGain = 1): number {
+  return ops.roughness * roughnessGain * ((random(ops) * (max - min)) + min);
 }
 
-function _offsetOpt(x: number, ops: ResolvedOptions): number {
-  return _offset(-x, x, ops);
+function _offsetOpt(x: number, ops: ResolvedOptions, roughnessGain?: number): number {
+  return _offset(-x, x, ops, roughnessGain);
 }
 
-function _doubleLine(x1: number, y1: number, x2: number, y2: number, o: ResolvedOptions): Op[] {
-  const o1 = _line(x1, y1, x2, y2, o, true, false);
-  const o2 = _line(x1, y1, x2, y2, o, true, true);
-  return o1.concat(o2);
+function _doubleLine(x1: number, y1: number, x2: number, y2: number, o: ResolvedOptions): Vector[] {
+  return [
+    _line(x1, y1, x2, y2, o, true, false),
+    _line(x1, y1, x2, y2, o, true, true)
+  ];
 }
 
-function _line(x1: number, y1: number, x2: number, y2: number, o: ResolvedOptions, move: boolean, overlay: boolean): Op[] {
-  const lengthSq = Math.pow((x1 - x2), 2) + Math.pow((y1 - y2), 2);
+function _line(x1: number, y1: number, x2: number, y2: number, o: ResolvedOptions, move: boolean, overlay: boolean): Vector {
+  const lengthSq = distanceSq([x1, y1], [x2, y2]);
   const length = Math.sqrt(lengthSq);
-  if (length < 200) {
-    o.roughnessGain = 1;
-  } else if (length > 500) {
-    o.roughnessGain = 0.4;
-  } else {
-    o.roughnessGain = (-0.0016668) * length + 1.233334;
+  let roughnessGain = 1;
+  if (length > 500) {
+    roughnessGain = 0.4;
+  } else if (length > 200) {
+    roughnessGain = (-0.0016668) * length + 1.233334;
   }
 
-  let offset = o.maxRandomnessOffset || 0;
+  let offset = MAX_RAND_OFFSET;
   if ((offset * offset * 100) > lengthSq) {
     offset = length / 10;
   }
   const halfOffset = offset / 2;
   const divergePoint = 0.2 + random(o) * 0.2;
-  let midDispX = o.bowing * o.maxRandomnessOffset * (y2 - y1) / 200;
-  let midDispY = o.bowing * o.maxRandomnessOffset * (x1 - x2) / 200;
-  midDispX = _offsetOpt(midDispX, o);
-  midDispY = _offsetOpt(midDispY, o);
-  const ops: Op[] = [];
-  const randomHalf = () => _offsetOpt(halfOffset, o);
-  const randomFull = () => _offsetOpt(offset, o);
+  let midDispX = o.bowing * MAX_RAND_OFFSET * (y2 - y1) / 200;
+  let midDispY = o.bowing * MAX_RAND_OFFSET * (x1 - x2) / 200;
+  midDispX = _offsetOpt(midDispX, o, roughnessGain);
+  midDispY = _offsetOpt(midDispY, o, roughnessGain);
+  const randomHalf = () => _offsetOpt(halfOffset, o, roughnessGain);
+  const randomFull = () => _offsetOpt(offset, o, roughnessGain);
+
+  const data: number[] = [];
+
   if (move) {
     if (overlay) {
-      ops.push({
-        op: 'move', data: [
-          x1 + randomHalf(),
-          y1 + randomHalf()
-        ]
-      });
+      data.push(x1 + randomHalf(), y1 + randomHalf());
     } else {
-      ops.push({
-        op: 'move', data: [
-          x1 + _offsetOpt(offset, o),
-          y1 + _offsetOpt(offset, o)
-        ]
-      });
+      data.push(x1 + _offsetOpt(offset, o, roughnessGain), y1 + _offsetOpt(offset, o, roughnessGain));
     }
   }
   if (overlay) {
-    ops.push({
-      op: 'bcurveTo', data: [
-        midDispX + x1 + (x2 - x1) * divergePoint + randomHalf(),
-        midDispY + y1 + (y2 - y1) * divergePoint + randomHalf(),
-        midDispX + x1 + 2 * (x2 - x1) * divergePoint + randomHalf(),
-        midDispY + y1 + 2 * (y2 - y1) * divergePoint + randomHalf(),
-        x2 + randomHalf(),
-        y2 + randomHalf()
-      ]
-    });
+    data.push(
+      midDispX + x1 + (x2 - x1) * divergePoint + randomHalf(),
+      midDispY + y1 + (y2 - y1) * divergePoint + randomHalf(),
+      midDispX + x1 + 2 * (x2 - x1) * divergePoint + randomHalf(),
+      midDispY + y1 + 2 * (y2 - y1) * divergePoint + randomHalf(),
+      x2 + randomHalf(),
+      y2 + randomHalf()
+    );
   } else {
-    ops.push({
-      op: 'bcurveTo', data: [
-        midDispX + x1 + (x2 - x1) * divergePoint + randomFull(),
-        midDispY + y1 + (y2 - y1) * divergePoint + randomFull(),
-        midDispX + x1 + 2 * (x2 - x1) * divergePoint + randomFull(),
-        midDispY + y1 + 2 * (y2 - y1) * divergePoint + randomFull(),
-        x2 + randomFull(),
-        y2 + randomFull()
-      ]
-    });
+    data.push(
+      midDispX + x1 + (x2 - x1) * divergePoint + randomFull(),
+      midDispY + y1 + (y2 - y1) * divergePoint + randomFull(),
+      midDispX + x1 + 2 * (x2 - x1) * divergePoint + randomFull(),
+      midDispY + y1 + 2 * (y2 - y1) * divergePoint + randomFull(),
+      x2 + randomFull(),
+      y2 + randomFull()
+    );
   }
-  return ops;
+  return { op: 'curve', data };
 }
 
-function _curveWithOffset(points: Point[], offset: number, o: ResolvedOptions): Op[] {
+function _curveWithOffset(points: Point[], offset: number, o: ResolvedOptions): Vector[] {
   const ps: Point[] = [];
   ps.push([
     points[0][0] + _offsetOpt(offset, o),
@@ -319,37 +310,44 @@ function _curveWithOffset(points: Point[], offset: number, o: ResolvedOptions): 
   return _curve(ps, null, o);
 }
 
-function _curve(points: Point[], closePoint: Point | null, o: ResolvedOptions): Op[] {
+function _curve(points: Point[], closePoint: Point | null, o: ResolvedOptions): Vector[] {
   const len = points.length;
-  let ops: Op[] = [];
+  const vectors: Vector[] = [];
+
   if (len > 3) {
     const b = [];
     const s = 1 - o.curveTightness;
-    ops.push({ op: 'move', data: [points[1][0], points[1][1]] });
+    const curveVector: Vector = { op: 'curve', data: [points[1][0], points[1][1]] };
     for (let i = 1; (i + 2) < len; i++) {
       const cachedVertArray = points[i];
       b[0] = [cachedVertArray[0], cachedVertArray[1]];
       b[1] = [cachedVertArray[0] + (s * points[i + 1][0] - s * points[i - 1][0]) / 6, cachedVertArray[1] + (s * points[i + 1][1] - s * points[i - 1][1]) / 6];
       b[2] = [points[i + 1][0] + (s * points[i][0] - s * points[i + 2][0]) / 6, points[i + 1][1] + (s * points[i][1] - s * points[i + 2][1]) / 6];
       b[3] = [points[i + 1][0], points[i + 1][1]];
-      ops.push({ op: 'bcurveTo', data: [b[1][0], b[1][1], b[2][0], b[2][1], b[3][0], b[3][1]] });
+      curveVector.data.push(b[1][0], b[1][1], b[2][0], b[2][1], b[3][0], b[3][1]);
     }
+    vectors.push(curveVector);
     if (closePoint && closePoint.length === 2) {
-      const ro = o.maxRandomnessOffset;
-      ops.push({ op: 'lineTo', data: [closePoint[0] + _offsetOpt(ro, o), closePoint[1] + _offsetOpt(ro, o)] });
+      const cvlen = curveVector.data.length;
+      vectors.push({
+        op: 'line',
+        data: [curveVector.data[cvlen - 2], curveVector.data[cvlen - 1], closePoint[0] + _offsetOpt(MAX_RAND_OFFSET, o), closePoint[1] + _offsetOpt(MAX_RAND_OFFSET, o)]
+      });
     }
   } else if (len === 3) {
-    ops.push({ op: 'move', data: [points[1][0], points[1][1]] });
-    ops.push({
-      op: 'bcurveTo', data: [
+    vectors.push({
+      op: 'curve',
+      data: [
+        points[1][0], points[1][1],
         points[1][0], points[1][1],
         points[2][0], points[2][1],
-        points[2][0], points[2][1]]
+        points[2][0], points[2][1]
+      ]
     });
   } else if (len === 2) {
-    ops = ops.concat(_doubleLine(points[0][0], points[0][1], points[1][0], points[1][1], o));
+    vectors.push(..._doubleLine(points[0][0], points[0][1], points[1][0], points[1][1], o));
   }
-  return ops;
+  return vectors;
 }
 
 function _computeEllipsePoints(increment: number, cx: number, cy: number, rx: number, ry: number, offset: number, overlap: number, o: ResolvedOptions): Point[][] {
@@ -409,30 +407,25 @@ function _arc(increment: number, cx: number, cy: number, rx: number, ry: number,
   return _curve(points, null, o);
 }
 
-function _bezierTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number, path: RoughPath, o: ResolvedOptions): Op[] {
-  const ops: Op[] = [];
-  const ros = [o.maxRandomnessOffset || 1, (o.maxRandomnessOffset || 1) + 0.5];
+function _bezierTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number, path: RoughPath, o: ResolvedOptions): Vector[] {
+  const vectors: Vector[] = [];
+  const ros = [MAX_RAND_OFFSET, MAX_RAND_OFFSET + 0.5];
   let f: Point = [0, 0];
   for (let i = 0; i < 2; i++) {
-    if (i === 0) {
-      ops.push({ op: 'move', data: [path.x, path.y] });
-    } else {
-      ops.push({ op: 'move', data: [path.x + _offsetOpt(ros[0], o), path.y + _offsetOpt(ros[0], o)] });
-    }
+    const data: number[] = (i === 0) ? [path.x, path.y] : [path.x + _offsetOpt(ros[0], o), path.y + _offsetOpt(ros[0], o)];
     f = [x + _offsetOpt(ros[i], o), y + _offsetOpt(ros[i], o)];
-    ops.push({
-      op: 'bcurveTo', data: [
-        x1 + _offsetOpt(ros[i], o), y1 + _offsetOpt(ros[i], o),
-        x2 + _offsetOpt(ros[i], o), y2 + _offsetOpt(ros[i], o),
-        f[0], f[1]
-      ]
-    });
+    data.push(
+      x1 + _offsetOpt(ros[i], o), y1 + _offsetOpt(ros[i], o),
+      x2 + _offsetOpt(ros[i], o), y2 + _offsetOpt(ros[i], o),
+      ...f
+    );
+    vectors.push({ op: 'curve', data });
   }
   path.setPosition(f[0], f[1]);
-  return ops;
+  return vectors;
 }
 
-function _processSegment(path: RoughPath, seg: Segment, prevSeg: Segment | null, o: ResolvedOptions): Op[] {
+function _processSegment(path: RoughPath, seg: Segment, prevSeg: Segment | null, o: ResolvedOptions): Vector[] {
   let ops: Op[] = [];
   switch (seg.key) {
     case 'M':
@@ -445,9 +438,8 @@ function _processSegment(path: RoughPath, seg: Segment, prevSeg: Segment | null,
           x += path.x;
           y += path.y;
         }
-        const ro = 1 * (o.maxRandomnessOffset || 0);
-        x = x + _offsetOpt(ro, o);
-        y = y + _offsetOpt(ro, o);
+        x = x + _offsetOpt(MAX_RAND_OFFSET, o);
+        y = y + _offsetOpt(MAX_RAND_OFFSET, o);
         path.setPosition(x, y);
         ops.push({ op: 'move', data: [x, y] });
       }

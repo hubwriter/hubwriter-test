@@ -1,4 +1,4 @@
-import { Point, lineLength } from './geometry';
+import { Point, distance } from './geometry';
 
 interface PathToken {
   type: number;
@@ -443,9 +443,9 @@ export class PathFitter {
       let minArea = -1;
       let minIndex = -1;
       for (let i = 1; i < (points.length - 1); i++) {
-        const a = lineLength([points[i - 1], points[i]]);
-        const b = lineLength([points[i], points[i + 1]]);
-        const c = lineLength([points[i - 1], points[i + 1]]);
+        const a = distance(points[i - 1], points[i]);
+        const b = distance(points[i], points[i + 1]);
+        const c = distance(points[i - 1], points[i + 1]);
         const s = (a + b + c) / 2.0;
         const area = Math.sqrt(s * (s - a) * (s - b) * (s - c));
         areas.push(area);
